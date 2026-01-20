@@ -36,8 +36,14 @@ const HOSTNAMES = [
   // 'localhost.ptlogin2.qq.com
   // 'localhost.sec.qq.com',
   // 'localhost.work.weixin.qq.com',
-  '*.sslip.io',
-  '*.nip.io'
+  '127.*.*.*.sslip.io',
+  '127-*-*-*.sslip.io',
+  '*.127.*.*.*.sslip.io',
+  '*-127-*-*-*.sslip.io',
+  '127.*.*.*.nip.io',
+  '127-*-*-*.nip.io',
+  '*.127.*.*.*.nip.io',
+  '*-127-*-*-*.nip.io'
 ];
 
 export const buildAlwaysRealIPModule = task(require.main === module, __filename)(async (span) => {
@@ -89,7 +95,16 @@ export const buildAlwaysRealIPModule = task(require.main === module, __filename)
           dns: {
             'fake-ip-filter': appendArrayInPlace(
               /** clash */
-              dataset.flatMap(({ domains }) => domains.map((domain) => `+.${domain}`)),
+              dataset.flatMap(({ domains }) => domains.map((domain) => {
+                switch (domain[0]) {
+                  case '$':
+                    return domain.slice(1);
+                  case '+':
+                    return '+.' + domain.slice(1);
+                  default:
+                    return domain;
+                }
+              })),
               HOSTNAMES
             )
           }

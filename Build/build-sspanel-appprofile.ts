@@ -6,13 +6,14 @@ import path from 'node:path';
 
 import { ALL as AllStreamServices } from '../Source/stream';
 import { getChnCidrPromise } from './build-chn-cidr';
-import { getTelegramCIDRPromise } from './build-telegram-cidr';
+import { getTelegramCIDRPromise } from './lib/get-telegram-backup-ip';
 import { compareAndWriteFile } from './lib/create-file';
 import { getMicrosoftCdnRulesetPromise } from './build-microsoft-cdn';
 import { isTruthy, nullthrow } from 'foxts/guard';
 import { appendArrayInPlace } from 'foxts/append-array-in-place';
 import { OUTPUT_INTERNAL_DIR, OUTPUT_SURGE_DIR, SOURCE_DIR } from './constants/dir';
 import { ClashOnlyRulesetOutput } from './lib/rules/ruleset';
+import { getGlobalRulesetPromise } from './build-global-server-dns-mapping';
 
 const POLICY_GROUPS: Array<[name: string, insertProxy: boolean, insertDirect: boolean]> = [
   ['Default Proxy', true, false],
@@ -30,6 +31,16 @@ const steamDomainsPromise = readFileIntoProcessedArray(path.join(SOURCE_DIR, 'do
  * This only generates a simplified version, for under-used users only.
  */
 export const buildSSPanelUIMAppProfile = task(require.main === module, __filename)(async (span) => {
+  const streamRules = AllStreamServices.flatMap((i) => i.rules);
+  const [streamCidrs4, streamCidrs6] = AllStreamServices.reduce<[cidr4: string[], cidr6: string[]]>((acc, i) => {
+    if (i.ip) {
+      appendArrayInPlace(acc[0], i.ip.v4);
+      appendArrayInPlace(acc[1], i.ip.v6);
+    }
+
+    return acc;
+  }, [[], []]);
+
   const [
     [domesticRules, directRules, lanRules],
     appleCdnDomains,
@@ -38,41 +49,31 @@ export const buildSSPanelUIMAppProfile = task(require.main === module, __filenam
     neteaseMusicRules,
     microsoftRules,
     appleRules,
-    streamRules,
+    // streamRules,
     steamDomainset,
-    globalRules,
+    [globalRules],
     telegramRules,
     [domesticCidrs4, domesticCidrs6],
-    [streamCidrs4, streamCidrs6],
+    // [streamCidrs4, streamCidrs6],
     { ipcidr: telegramCidrs4, ipcidr6: telegramCidrs6 },
     rawLanCidrs
   ] = await Promise.all([
     // domestic - domains
     getDomesticAndDirectDomainsRulesetPromise(),
     getAppleCdnDomainsPromise(),
-    getMicrosoftCdnRulesetPromise(),
+    getMicrosoftCdnRulesetPromise,
     readFileIntoProcessedArray(path.join(OUTPUT_SURGE_DIR, 'non_ip/apple_cn.conf')),
     readFileIntoProcessedArray(path.join(OUTPUT_SURGE_DIR, 'non_ip/neteasemusic.conf')),
     // microsoft & apple - domains
     readFileIntoProcessedArray(path.join(OUTPUT_SURGE_DIR, 'non_ip/microsoft.conf')),
     readFileIntoProcessedArray(path.join(OUTPUT_SURGE_DIR, 'non_ip/apple_services.conf')),
-    // stream - domains
-    AllStreamServices.flatMap((i) => i.rules),
     // steam - domains
     steamDomainsPromise,
     // global - domains
-    readFileIntoProcessedArray(path.join(OUTPUT_SURGE_DIR, 'non_ip/global.conf')),
+    getGlobalRulesetPromise(),
     readFileIntoProcessedArray(path.join(OUTPUT_SURGE_DIR, 'non_ip/telegram.conf')),
     // domestic - ip cidr
     getChnCidrPromise(),
-    AllStreamServices.reduce<[cidr4: string[], cidr6: string[]]>((acc, i) => {
-      if (i.ip) {
-        appendArrayInPlace(acc[0], i.ip.v4);
-        appendArrayInPlace(acc[1], i.ip.v6);
-      }
-
-      return acc;
-    }, [[], []]),
     // global - ip cidr
     getTelegramCIDRPromise(),
     // lan - ip cidr

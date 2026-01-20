@@ -44,35 +44,33 @@ const deadDomains: string[] = [];
   await Promise.all([
     ...domainRules,
     ...domainSets
-  ].map(
-    filepath => runAgainstSourceFile(
-      filepath,
-      (domain: string, includeAllSubdomain: boolean) => {
-        bar.setTotal(bar.getTotal() + 1);
+  ].map(filepath => runAgainstSourceFile(
+    filepath,
+    (domain: string, includeAllSubdomain: boolean) => {
+      bar.setTotal(bar.getTotal() + 1);
 
-        return queue.add(async () => {
-          let registerableDomainAlive, registerableDomain, alive: boolean | undefined;
+      return queue.add(async () => {
+        let registerableDomainAlive, registerableDomain, alive: boolean | undefined;
 
-          if (includeAllSubdomain) {
-            // we only need to check apex domain, because we don't know if there is any stripped subdomain
-            ({ alive: registerableDomainAlive, registerableDomain } = await isRegisterableDomainAlive(domain));
-          } else {
-            ({ alive, registerableDomainAlive, registerableDomain } = await isDomainAlive(domain));
+        if (includeAllSubdomain) {
+          // we only need to check apex domain, because we don't know if there is any stripped subdomain
+          ({ alive: registerableDomainAlive, registerableDomain } = await isRegisterableDomainAlive(domain));
+        } else {
+          ({ alive, registerableDomainAlive, registerableDomain } = await isDomainAlive(domain));
+        }
+
+        bar.increment();
+
+        if (!registerableDomainAlive) {
+          if (registerableDomain) {
+            deadDomains.push('.' + registerableDomain);
           }
-
-          bar.increment();
-
-          if (!registerableDomainAlive) {
-            if (registerableDomain) {
-              deadDomains.push('.' + registerableDomain);
-            }
-          } else if (!includeAllSubdomain && alive != null && !alive) {
-            deadDomains.push(domain);
-          }
-        });
-      }
-    ).then(() => console.log('[crawl]', filepath))
-  ));
+        } else if (!includeAllSubdomain && alive != null && !alive) {
+          deadDomains.push(domain);
+        }
+      });
+    }
+  ).then(() => console.log('[crawl]', filepath))));
 
   await queue.done();
 

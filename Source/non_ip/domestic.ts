@@ -130,6 +130,7 @@ export const DOMESTICS: Record<string, DNSMapping> = {
       // 'qqmail.cn', // not owned by QQ, is sold on hichina.com
       '+qqmail.com',
       'qzone.com',
+      'tencent-cloud.cn',
       '+tencent-cloud.net',
       '+tencent-cloud.com', // apex doain resolve to 0.0.0.1 by DNSPod public DNS
       'tencent.com',
@@ -277,6 +278,9 @@ export const DOMESTICS: Record<string, DNSMapping> = {
       '+byteimg.com', // Uses alidns.com NS
       '+byteacctimg.com', // Uses alidns.com NS
       '+byteeffecttos.com', // Use hichina.com NS
+      '+bytescm.com', // Use alidns.com NS
+      '+bytetos.com', // Use alidns.com NS
+      '+bdurl.net', // Uses alidns.com NS
       '+ibytedapm.com', // China NS
       'oceanengine.com',
       '+edge-byted.com',
@@ -335,6 +339,7 @@ export const DOMESTICS: Record<string, DNSMapping> = {
 
       // Bilibili Baidu CDN
       '$upos-sz-mirrorbd.bilivideo.com',
+      '$upos-sz-mirrorbdb.bilivideo.com',
       '$upos-sz-mirrorbos.bilivideo.com'
     ]
   },
@@ -375,7 +380,8 @@ export const DOMESTICS: Record<string, DNSMapping> = {
       'yunpan.com.cn',
       '+qh-cdn.com',
       'baomitu.com',
-      'qiku.com'
+      'qiku.com',
+      '360simg.com'
     ]
   }
 };
@@ -400,16 +406,16 @@ export const DOH_BOOTSTRAP: Record<string, DNSMapping> = {
   DNSPOD: {
     hosts: {
       // 'dot.pub': ['120.53.53.53', '1.12.12.12'],
-      'doh.pub': ['120.53.53.53', '1.12.12.12']
+      // 'doh.pub': ['120.53.53.53', '1.12.12.12']
       // 'dns.pub': ['120.53.53.53', '1.12.12.12']
     },
     realip: false,
     ruleset: false,
-    dns: 'https://1.12.12.12/dns-query',
+    dns: '119.29.29.29',
     domains: [
-      // '$dot.pub',
-      '$doh.pub'
-      // '$dns.pub'
+      '$dot.pub',
+      '$doh.pub',
+      '$dns.pub'
     ]
   },
   QIHOO360: {

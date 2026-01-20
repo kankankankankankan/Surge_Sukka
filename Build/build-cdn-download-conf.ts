@@ -7,8 +7,10 @@ import { SOURCE_DIR } from './constants/dir';
 import { DomainsetOutput } from './lib/rules/domainset';
 import { CRASHLYTICS_WHITELIST } from './constants/reject-data-source';
 import Worktank from 'worktank';
+import { $$fetch } from './lib/fetch-retry';
+import { fastUri } from 'fast-uri';
 
-const cdnDomainsListPromise = readFileIntoProcessedArray(path.join(SOURCE_DIR, 'domainset/cdn.conf'));
+const cdnDomainSetPromise = readFileIntoProcessedArray(path.join(SOURCE_DIR, 'domainset/cdn.conf'));
 const downloadDomainSetPromise = readFileIntoProcessedArray(path.join(SOURCE_DIR, 'domainset/download.conf'));
 const steamDomainSetPromise = readFileIntoProcessedArray(path.join(SOURCE_DIR, 'domainset/game-download.conf'));
 
@@ -23,10 +25,10 @@ const pool = new Worktank({
     autoInstantiate: true,
     methods: {
       // eslint-disable-next-line object-shorthand -- workertank
-      getS3OSSDomains: async function (importMetaUrl: string): Promise<string[]> {
+      getS3OSSDomains: async function (__filename: string): Promise<string[]> {
         // TODO: createRequire is a temporary workaround for https://github.com/nodejs/node/issues/51956
         const { default: module } = await import('node:module');
-        const __require = module.createRequire(importMetaUrl);
+        const __require = module.createRequire(__filename);
 
         const { HostnameTrie } = __require('./lib/trie') as typeof import('./lib/trie');
         const { fetchRemoteTextByLine } = __require('./lib/fetch-text-by-line') as typeof import('./lib/fetch-text-by-line');
@@ -75,15 +77,39 @@ const pool = new Worktank({
 export const buildCdnDownloadConf = task(require.main === module, __filename)(async (span) => {
   const [
     S3OSSDomains,
+    IPFSDomains,
     cdnDomainsList,
     downloadDomainSet,
     steamDomainSet
   ] = await Promise.all([
-    span.traceChildAsync('download public suffix list for s3', () => pool.exec(
-      'getS3OSSDomains',
-      [import.meta.url]
-    ).finally(() => pool.terminate())),
-    cdnDomainsListPromise,
+    span.traceChildAsync(
+      'download public suffix list for s3',
+      () => pool.exec(
+        'getS3OSSDomains',
+        [__filename]
+      ).finally(() => pool.terminate())
+    ),
+    span.traceChildAsync(
+      'load public ipfs gateway list',
+      async () => {
+        const data = await (await $$fetch('https://cdn.jsdelivr.net/gh/ipfs/public-gateway-checker@refs/heads/main/gateways.json')).json();
+        if (!Array.isArray(data)) {
+          console.error('Invalid IPFS gateway list format');
+          return [];
+        }
+        return data.reduce<string[]>((acc, gateway) => {
+          if (typeof gateway !== 'string') {
+            return acc;
+          }
+          const hn = fastUri.parse(gateway).host;
+          if (hn) {
+            acc.push(hn.trim());
+          }
+          return acc;
+        }, []);
+      }
+    ),
+    cdnDomainSetPromise,
     downloadDomainSetPromise,
     steamDomainSetPromise
   ]);
@@ -104,6 +130,7 @@ export const buildCdnDownloadConf = task(require.main === module, __filename)(as
         'This file contains object storage and static assets CDN domains.'
       )
       .addFromDomainset(cdnDomainsList)
+      .bulkAddDomainSuffix(IPFSDomains)
       .write(),
 
     new DomainsetOutput(span, 'download')

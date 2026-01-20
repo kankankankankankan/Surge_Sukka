@@ -1,9 +1,9 @@
 import { task } from './trace';
 import { SHARED_DESCRIPTION } from './constants/description';
-import { once } from 'foxts/once';
 import { RulesetOutput } from './lib/rules/ruleset';
 import Worktank from 'worktank';
 import { RULES } from './constants/microsoft-cdn';
+import { wait } from 'foxts/wait';
 
 const pool = new Worktank({
   pool: {
@@ -15,11 +15,11 @@ const pool = new Worktank({
     autoTerminate: 30000, // The interval of milliseconds at which to check if the pool can be automatically terminated, to free up resources, workers will be spawned up again if needed
     autoInstantiate: true,
     methods: {
-    // eslint-disable-next-line object-shorthand -- workertank
-      getMicrosoftCdnRuleset: async function (importMetaUrl: string): Promise<[domains: string[], domainSuffixes: string[]]> {
+      // eslint-disable-next-line object-shorthand -- workertank
+      getMicrosoftCdnRuleset: async function (__filename: string): Promise<[domains: string[], domainSuffixes: string[]]> {
         // TODO: createRequire is a temporary workaround for https://github.com/nodejs/node/issues/51956
         const { default: module } = await import('node:module');
-        const __require = module.createRequire(importMetaUrl);
+        const __require = module.createRequire(__filename);
 
         const { HostnameSmolTrie } = __require('./lib/trie');
         const { PROBE_DOMAINS, DOMAINS, DOMAIN_SUFFIXES, BLACKLIST } = __require('./constants/microsoft-cdn') as typeof import('./constants/microsoft-cdn');
@@ -48,18 +48,13 @@ const pool = new Worktank({
   }
 });
 
-export const getMicrosoftCdnRulesetPromise = once<Promise<[domains: string[], domainSuffixes: string[]]>>(async () => {
-  const res = await pool.exec(
-    'getMicrosoftCdnRuleset',
-    [import.meta.url]
-  );
-  pool.terminate();
-
-  return res;
-});
+export const getMicrosoftCdnRulesetPromise = wait(0).then(() => pool.exec(
+  'getMicrosoftCdnRuleset',
+  [__filename]
+)).finally(() => pool.terminate());
 
 export const buildMicrosoftCdn = task(require.main === module, __filename)(async (span) => {
-  const [domains, domainSuffixes] = await span.traceChildPromise('get microsoft cdn domains', getMicrosoftCdnRulesetPromise());
+  const [domains, domainSuffixes] = await span.traceChildPromise('get microsoft cdn domains', getMicrosoftCdnRulesetPromise);
 
   return new RulesetOutput(span, 'microsoft_cdn', 'non_ip')
     .withTitle('Sukka\'s Ruleset - Microsoft CDN')
