@@ -5,13 +5,16 @@ on:
       - master
   pull_request:
   schedule:
-    - cron: '0 5 * * *'  # Runs at 05:00 UTC
-    - cron: '0 17 * * *' # Runs at 1:00 UTC
+    - cron: "0 5 * * *"   # 05:00 UTC
+    - cron: "0 17 * * *"  # 17:00 UTC
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -21,28 +24,34 @@ jobs:
     steps:
       - uses: smorimoto/tune-github-hosted-runner-network@v1
         # https://github.com/actions/runner-images/issues/1187
+
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
+
       - uses: actions/setup-node@v6
         with:
           node-version-file: ".node-version"
           cache: "pnpm"
+
       - name: Grab Building Folder
         id: ramdisk
         run: |
           echo "build_dir=previous-build-${{ github.run_id }}-${{ github.run_number }}" >> $GITHUB_OUTPUT
+
       - name: Download Previous Build
         uses: actions/checkout@v6
         with:
           repository: SukkaLab/ruleset.skk.moe
           persist-credentials: false
-          filter: "tree:0" # we don't care about git history here
+          filter: "tree:0"
           fetch-tags: false
           path: ${{ steps.ramdisk.outputs.build_dir }}
+
       - name: Setup build folder
         run: |
           if [ ! -d ${{ steps.ramdisk.outputs.build_dir }}/.git ]; then
@@ -56,6 +65,7 @@ jobs:
             exit 1
           fi
           echo "public directory is ready: ${{ steps.ramdisk.outputs.build_dir }}"
+
       - name: Get current date
         id: date
         run: |
@@ -66,6 +76,7 @@ jobs:
           echo "hour=$(date +'%H')" >> $GITHUB_OUTPUT
           echo "minute=$(date +'%M')" >> $GITHUB_OUTPUT
           echo "second=$(date +'%S')" >> $GITHUB_OUTPUT
+
       - name: Restore cache.db
         uses: actions/cache/restore@v5
         id: cache-db-restore
@@ -73,7 +84,6 @@ jobs:
           path: |
             .cache
           key: ${{ runner.os }}-v3-${{ steps.date.outputs.year }}-${{ steps.date.outputs.month }}-${{ steps.date.outputs.day }} ${{ steps.date.outputs.hour }}:${{ steps.date.outputs.minute }}:${{ steps.date.outputs.second }}
-          # If source files changed but packages didn't, rebuild from a prior cache.
           restore-keys: |
             ${{ runner.os }}-v3-${{ steps.date.outputs.year }}-${{ steps.date.outputs.month }}-${{ steps.date.outputs.day }} ${{ steps.date.outputs.hour }}:${{ steps.date.outputs.minute }}:
             ${{ runner.os }}-v3-${{ steps.date.outputs.year }}-${{ steps.date.outputs.month }}-${{ steps.date.outputs.day }} ${{ steps.date.outputs.hour }}:
@@ -81,13 +91,14 @@ jobs:
             ${{ runner.os }}-v3-${{ steps.date.outputs.year }}-${{ steps.date.outputs.month }}-
             ${{ runner.os }}-v3-${{ steps.date.outputs.year }}-
             ${{ runner.os }}-v3-
+
       - run: pnpm install
+
       - run: pnpm run build
         env:
           PUBLIC_DIR: ${{ steps.ramdisk.outputs.build_dir }}
+
       - name: Pre-deploy check
-        # If the public directory doesn't exist, the build should fail.
-        # If the public directory is empty, the build should fail.
         run: |
           if [ ! -d ${{ steps.ramdisk.outputs.build_dir }} ]; then
             echo "public directory not found"
@@ -102,6 +113,7 @@ jobs:
             exit 1
           fi
           echo "public directory is ready: ${{ steps.ramdisk.outputs.build_dir }}"
+
       - uses: actions/upload-artifact@v6
         with:
           name: build-artifact-${{ github.sha }}-${{ github.run_number }}
@@ -110,6 +122,7 @@ jobs:
           retention-days: 1
           compression-level: 4
           include-hidden-files: false
+
       - name: Cache cache.db
         if: always()
         uses: actions/cache/save@v5
@@ -129,6 +142,7 @@ jobs:
         with:
           name: build-artifact-${{ github.sha }}-${{ github.run_number }}
           path: public
+
       - name: Diff
         run: |
           git clone --filter=tree:0 --no-tags https://github.com/SukkaLab/ruleset.skk.moe.git ./deploy-git >/dev/null 2>&1
@@ -144,15 +158,15 @@ jobs:
     name: Deploy to Cloudflare Pages
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-slim
-    # matrix is a tricky way to define a variable directly in the action yaml
     strategy:
       matrix:
-        wranglerVersion: ['3.114.12']
+        wranglerVersion: ["3.114.12"]
     steps:
       - name: Get NPM cache directory path
         id: npm_cache_path
         shell: sh
         run: echo dir=$(npm config get cache) >> $GITHUB_OUTPUT
+
       - uses: actions/cache@v5
         with:
           path: |
@@ -161,20 +175,43 @@ jobs:
           key: deploy-to-cloudflare-npm-${{ runner.os }}-${{ runner.arch }}-wrangler-${{ matrix.wranglerVersion }}
           restore-keys: |
             deploy-to-cloudflare-npm-${{ runner.os }}-${{ runner.arch }}-wrangler-
+
       - uses: actions/download-artifact@v7
         with:
           name: build-artifact-${{ github.sha }}-${{ github.run_number }}
           path: public
+
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy public --project-name=surge-ruleset --commit-dirty=true --branch=master
           wranglerVersion: ${{ matrix.wranglerVersion }}
-          
+
+  deploy_to_github_pages_branch:
+    needs:
+      - build
+    name: Deploy static to gh-pages branch
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: build-artifact-${{ github.sha }}-${{ github.run_number }}
+          path: public
+
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: gh-pages
+          force_orphan: true
+
   remove_artifacts:
     needs:
       - deploy_to_cloudflare_pages
+      - deploy_to_github_pages_branch
     name: Remove Artifacts after Deployment
     runs-on: ubuntu-slim
     steps:
