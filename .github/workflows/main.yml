@@ -98,6 +98,23 @@ jobs:
         env:
           PUBLIC_DIR: ${{ steps.ramdisk.outputs.build_dir }}
 
+      - name: Fix root-absolute links for GitHub Pages project site
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="${{ steps.ramdisk.outputs.build_dir }}"
+          REPO="${{ github.event.repository.name }}"
+          export REPO
+
+          find "$TARGET" -type f \( -name "*.html" -o -name "*.js" -o -name "*.css" \) -print0 \
+            | xargs -0 perl -pi -e '
+              my $repo = $ENV{REPO};
+              my $prefix = "/$repo";
+              s/=(["\x27])\/(?!\/|\Q$repo\E\/)/=$1$prefix\//g;      # =" /path
+              s/\((["\x27])\/(?!\/|\Q$repo\E\/)/($1$prefix\//g;     # ("/path
+              s/url\(\s*\/(?!\/|\Q$repo\E\/)/url($prefix\//g;        # url(/path
+            '
+
       - name: Pre-deploy check
         run: |
           if [ ! -d ${{ steps.ramdisk.outputs.build_dir }} ]; then
